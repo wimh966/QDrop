@@ -1,0 +1,7 @@
+*.so
+*.egg
+*.egg-info
+*.log
+*.pyc
+.DS_Store
+__pycache__
