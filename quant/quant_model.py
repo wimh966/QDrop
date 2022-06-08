@@ -1,6 +1,6 @@
 import torch.nn as nn
 from .quant_block import specials, BaseQuantBlock
-from .quant_layer import QuantModule, StraightThrough
+from .quant_layer import QuantModule, StraightThrough, UniformAffineQuantizer
 from .fold_bn import search_fold_and_remove_bn
 
 
@@ -49,13 +49,17 @@ class QuantModel(nn.Module):
         return self.model(input)
 
     def set_first_last_layer_to_8bit(self):
-        module_list = []
-        for m in self.model.modules():
-            if isinstance(m, QuantModule):
-                module_list += [m]
-        module_list[0].weight_quantizer.bitwidth_refactor(8)
-        module_list[-1].weight_quantizer.bitwidth_refactor(8)
-        module_list[-2].act_quantizer.bitwidth_refactor(8)
+        w_list, a_list = [], []
+        for module in self.model.modules():
+            if isinstance(module, UniformAffineQuantizer):
+                if module.leaf_param:
+                    a_list.append(module)
+                else:
+                    w_list.append(module)
+        w_list[0].bitwidth_refactor(8)
+        w_list[-1].bitwidth_refactor(8)
+        'the image input has been in 0~255, set the last layer\'s input to 8-bit'
+        a_list[-2].bitwidth_refactor(8)
 
     def disable_network_output_quantization(self):
         module_list = []

@@ -1,5 +1,5 @@
 import torch.nn as nn
-from .quant_layer import QuantModule, UniformAffineQuantizer, StraightThrough
+from .quant_layer import QuantModule, UniformAffineQuantizer
 from QDrop.models.resnet import BasicBlock, Bottleneck
 from QDrop.models.regnet import ResBottleneckBlock
 from QDrop.models.mobilenetv2 import InvertedResidual
@@ -13,15 +13,10 @@ class BaseQuantBlock(nn.Module):
     and quantization after the elemental-wise add operation, therefore, we
     put this part in this class.
     """
-    def __init__(self, act_quant_params: dict = {}):
+    def __init__(self):
         super().__init__()
         self.use_weight_quant = False
         self.use_act_quant = False
-        # initialize quantizer
-
-        self.act_quantizer = UniformAffineQuantizer(**act_quant_params)
-        self.activation_function = StraightThrough()
-
         self.ignore_reconstruction = False
 
     def set_quant_state(self, weight_quant: bool = False, act_quant: bool = False):
@@ -38,21 +33,18 @@ class QuantBasicBlock(BaseQuantBlock):
     Implementation of Quantized BasicBlock used in ResNet-18 and ResNet-34.
     """
     def __init__(self, basic_block: BasicBlock, weight_quant_params: dict = {}, act_quant_params: dict = {}):
-        super().__init__(act_quant_params)
+        super().__init__()
         self.conv1 = QuantModule(basic_block.conv1, weight_quant_params, act_quant_params)
         self.conv1.activation_function = basic_block.relu1
         self.conv2 = QuantModule(basic_block.conv2, weight_quant_params, act_quant_params, disable_act_quant=True)
-
-        # modify the activation function to ReLU
-        self.activation_function = basic_block.relu2
 
         if basic_block.downsample is None:
             self.downsample = None
         else:
             self.downsample = QuantModule(basic_block.downsample[0], weight_quant_params, act_quant_params,
                                           disable_act_quant=True)
-        # copying all attributes in original block
-        self.stride = basic_block.stride
+        self.activation_function = basic_block.relu2
+        self.act_quantizer = UniformAffineQuantizer(**act_quant_params)
 
     def forward(self, x):
         residual = x if self.downsample is None else self.downsample(x)
@@ -71,23 +63,21 @@ class QuantBottleneck(BaseQuantBlock):
     """
 
     def __init__(self, bottleneck: Bottleneck, weight_quant_params: dict = {}, act_quant_params: dict = {}):
-        super().__init__(act_quant_params)
+        super().__init__()
         self.conv1 = QuantModule(bottleneck.conv1, weight_quant_params, act_quant_params)
         self.conv1.activation_function = bottleneck.relu1
         self.conv2 = QuantModule(bottleneck.conv2, weight_quant_params, act_quant_params)
         self.conv2.activation_function = bottleneck.relu2
         self.conv3 = QuantModule(bottleneck.conv3, weight_quant_params, act_quant_params, disable_act_quant=True)
 
-        # modify the activation function to ReLU
-        self.activation_function = bottleneck.relu3
-
         if bottleneck.downsample is None:
             self.downsample = None
         else:
             self.downsample = QuantModule(bottleneck.downsample[0], weight_quant_params, act_quant_params,
                                           disable_act_quant=True)
-        # copying all attributes in original block
-        self.stride = bottleneck.stride
+        # modify the activation function to ReLU
+        self.activation_function = bottleneck.relu3
+        self.act_quantizer = UniformAffineQuantizer(**act_quant_params)
 
     def forward(self, x):
         residual = x if self.downsample is None else self.downsample(x)
@@ -107,15 +97,12 @@ class QuantResBottleneckBlock(BaseQuantBlock):
     """
 
     def __init__(self, bottleneck: ResBottleneckBlock, weight_quant_params: dict = {}, act_quant_params: dict = {}):
-        super().__init__(act_quant_params)
+        super().__init__()
         self.conv1 = QuantModule(bottleneck.f.a, weight_quant_params, act_quant_params)
         self.conv1.activation_function = bottleneck.f.a_relu
         self.conv2 = QuantModule(bottleneck.f.b, weight_quant_params, act_quant_params)
         self.conv2.activation_function = bottleneck.f.b_relu
         self.conv3 = QuantModule(bottleneck.f.c, weight_quant_params, act_quant_params, disable_act_quant=True)
-
-        # modify the activation function to ReLU
-        self.activation_function = bottleneck.relu
 
         if bottleneck.proj_block:
             self.downsample = QuantModule(bottleneck.proj, weight_quant_params, act_quant_params,
@@ -124,6 +111,9 @@ class QuantResBottleneckBlock(BaseQuantBlock):
             self.downsample = None
         # copying all attributes in original block
         self.proj_block = bottleneck.proj_block
+
+        self.activation_function = bottleneck.relu
+        self.act_quantizer = UniformAffineQuantizer(**act_quant_params)
 
     def forward(self, x):
         residual = x if not self.proj_block else self.downsample(x)
@@ -144,7 +134,7 @@ class QuantInvertedResidual(BaseQuantBlock):
     """
 
     def __init__(self, inv_res: InvertedResidual, weight_quant_params: dict = {}, act_quant_params: dict = {}):
-        super().__init__(act_quant_params)
+        super().__init__()
 
         self.use_res_connect = inv_res.use_res_connect
         self.expand_ratio = inv_res.expand_ratio
@@ -162,13 +152,13 @@ class QuantInvertedResidual(BaseQuantBlock):
             )
             self.conv[0].activation_function = nn.ReLU6()
             self.conv[1].activation_function = nn.ReLU6()
+        self.act_quantizer = UniformAffineQuantizer(**act_quant_params)
 
     def forward(self, x):
         if self.use_res_connect:
             out = x + self.conv(x)
         else:
             out = self.conv(x)
-        out = self.activation_function(out)
         if self.use_act_quant:
             out = self.act_quantizer(out)
         return out
@@ -176,7 +166,7 @@ class QuantInvertedResidual(BaseQuantBlock):
 
 class _QuantInvertedResidual(BaseQuantBlock):
     def __init__(self, _inv_res: _InvertedResidual, weight_quant_params: dict = {}, act_quant_params: dict = {}):
-        super().__init__(act_quant_params)
+        super().__init__()
 
         self.apply_residual = _inv_res.apply_residual
         self.conv = nn.Sequential(
@@ -186,13 +176,13 @@ class _QuantInvertedResidual(BaseQuantBlock):
         )
         self.conv[0].activation_function = nn.ReLU()
         self.conv[1].activation_function = nn.ReLU()
+        self.act_quantizer = UniformAffineQuantizer(**act_quant_params)
 
     def forward(self, x):
         if self.apply_residual:
             out = x + self.conv(x)
         else:
             out = self.conv(x)
-        out = self.activation_function(out)
         if self.use_act_quant:
             out = self.act_quantizer(out)
         return out
