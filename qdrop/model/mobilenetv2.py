@@ -1,8 +1,5 @@
-# !/usr/bin/env python
-
 import torch.nn as nn
 import math
-import torch
 
 
 def conv_bn(inp, oup, stride):
@@ -63,7 +60,7 @@ class InvertedResidual(nn.Module):
 
 
 class MobileNetV2(nn.Module):
-    def __init__(self, n_class=1000, input_size=224, width_mult=1., dropout=0.0):
+    def __init__(self, num_classes=1000, input_size=224, width_mult=1., dropout=0.0):
         super(MobileNetV2, self).__init__()
         block = InvertedResidual
         input_channel = 32
@@ -102,7 +99,7 @@ class MobileNetV2(nn.Module):
         # building classifier
         self.classifier = nn.Sequential(
             nn.Dropout(dropout),
-            nn.Linear(self.last_channel, n_class),
+            nn.Linear(self.last_channel, num_classes),
         )
 
         self._initialize_weights()

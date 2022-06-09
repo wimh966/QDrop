@@ -1,5 +1,3 @@
-# !/usr/bin/env python
-
 import numpy as np
 import torch.nn as nn
 import math
@@ -453,4 +451,3 @@ def regnety_6400m(**kwargs):
     """
     model = RegNet(regnetY_6400M_config, **kwargs)
     return model
-

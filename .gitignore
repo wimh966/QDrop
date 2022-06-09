@@ -3,5 +3,10 @@
 *.egg-info
 *.log
 *.pyc
+*.sh
+exp
+!exp/w2a4/*/config.yaml
+!exp/w2a4/*/run.sh
+old_exp
 .DS_Store
 __pycache__

@@ -1,9 +1,5 @@
-# !/usr/bin/env python
-
 import torch
 import torch.nn as nn
-
-__all__ = ['mnasnet']
 
 
 class _InvertedResidual(nn.Module):
@@ -132,4 +128,3 @@ class MNASNet(torch.nn.Module):
 def mnasnet(**kwargs):
     model = MNASNet(**kwargs)
     return model
-

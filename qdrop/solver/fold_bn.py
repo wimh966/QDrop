@@ -78,16 +78,3 @@ def search_fold_and_remove_bn(model):
         else:
             prev = search_fold_and_remove_bn(m)
     return prev
-
-
-def search_fold_and_reset_bn(model):
-    model.eval()
-    prev = None
-    for n, m in model.named_children():
-        if is_bn(m) and is_absorbing(prev):
-            fold_bn_into_conv(prev, m)
-            # reset_bn(m)
-        else:
-            search_fold_and_reset_bn(m)
-        prev = m
-
