@@ -48,6 +48,8 @@ class UniformAffineQuantizer(nn.Module):
                  leaf_param: bool = False, prob: float = 1.0):
         super(UniformAffineQuantizer, self).__init__()
         self.sym = symmetric
+        if self.sym:
+            raise NotImplementedError
         assert 2 <= n_bits <= 8, 'bitwidth not supported'
         self.n_bits = n_bits
         self.n_levels = 2 ** self.n_bits
@@ -58,7 +60,12 @@ class UniformAffineQuantizer(nn.Module):
         '''if leaf_param, use EMA to set scale'''
         self.leaf_param = leaf_param
         self.channel_wise = channel_wise
-        self.scale_method = scale_method
+        self.eps = torch.tensor(1e-8, dtype=torch.float32)
+
+        '''mse params'''
+        self.scale_method = 'mse'
+        self.one_side_dist = None
+        self.num = 100
 
         '''for activation quantization'''
         self.running_min = None
@@ -71,22 +78,18 @@ class UniformAffineQuantizer(nn.Module):
     def set_inited(self, inited: bool = True):  # inited manually
         self.inited = inited
 
-    def update_quantize_range(self, x_min: float, x_max: float):
+    def update_quantize_range(self, x_min, x_max):
         if self.running_min is None:
             self.running_min = x_min
             self.running_max = x_max
         self.running_min = 0.1 * x_min + 0.9 * self.running_min
         self.running_max = 0.1 * x_max + 0.9 * self.running_max
-        x_min = self.running_min
-        x_max = self.running_max
-        return x_min, x_max
+        return self.running_min, self.running_max
 
     def forward(self, x: torch.Tensor):
         if self.inited is False:
             if self.leaf_param:
                 self.delta, self.zero_point = self.init_quantization_scale(x.clone().detach(), self.channel_wise)
-                # self.delta=torch.nn.Parameter(torch.tensor(delta).type_as(x))
-                # self.zero_point=torch.nn.Parameter(torch.tensor(zero_point).type_as(x))
             else:
                 self.delta, self.zero_point = self.init_quantization_scale(x.clone().detach(), self.channel_wise)
 
@@ -100,76 +103,117 @@ class UniformAffineQuantizer(nn.Module):
             x_ans = x_dequant
         return x_ans
 
-    def get_x_min_x_max(self, x, x_min: float, x_max: float):
-        if 'max' in self.scale_method:
-            if 'scale' in self.scale_method:
-                x_min = x_min * (self.n_bits + 2) / 8
-                x_max = x_max * (self.n_bits + 2) / 8
-            if self.leaf_param:
-                x_min, x_max = self.update_quantize_range(x_min, x_max)
-            x_absmax = max(abs(x_min), x_max)
-            if self.sym:
-                x_min, x_max = -x_absmax if x_min < 0 else 0, x_absmax
-            return x_min, x_max
-        elif self.scale_method == 'mse':
-            best_score = 1e+10
-            best_min, best_max = x_min, x_max
-            for i in range(80):
-                new_max = x_max * (1.0 - (i * 0.01))
-                new_min = x_min * (1.0 - (i * 0.01))
-                x_q = self.quantize(x, new_max, new_min)
-                # L_p norm minimization as described in LAPQ
-                # https://arxiv.org/abs/1911.07190
-                score = lp_loss(x, x_q, 2.4, reduction='all')
-                if score < best_score:
-                    best_score = score
-                    best_min, best_max = new_min, new_max
-            x_min, x_max = best_min, best_max
-            if self.leaf_param:
-                x_min, x_max = self.update_quantize_range(x_min, x_max)
-            return x_min, x_max
+    def lp_loss(self, pred, tgt, p=2.0):
+        x = (pred - tgt).abs().pow(p)
+        if not self.channel_wise:
+            return x.mean()
         else:
-            raise NotImplementedError
+            y = torch.flatten(x, 1)
+            return y.mean(1)
 
-    def init_quantization_scale_channel(self, x: torch.Tensor):
-        x_min, x_max = x.min().item(), x.max().item()
-        x_min, x_max = self.get_x_min_x_max(x, x_min, x_max)
-        delta = (x_max - x_min) / (2 ** self.n_bits - 1)
-        delta = max(delta, 1e-8)
-        zero_point = round(-x_min / delta)
-        return delta, zero_point
+    def calculate_qparams(self, min_val, max_val):
+        # one_dim or one element
+        quant_min, quant_max = 0, self.n_levels - 1
+        min_val_neg = torch.min(min_val, torch.zeros_like(min_val))
+        max_val_pos = torch.max(max_val, torch.zeros_like(max_val))
 
-    def init_quantization_scale(self, x_clone: torch.Tensor, channel_wise: bool = False):
-        if channel_wise:
-            n_channels = x_clone.shape[0]
-            if len(x_clone.shape) == 4:
-                x_max = x_clone.abs().max(dim=-1)[0].max(dim=-1)[0].max(dim=-1)[0]
-            else:
-                x_max = x_clone.abs().max(dim=-1)[0]
-            delta = x_max.clone()
-            zero_point = x_max.clone()
-            # determine the scale and zero point channel-by-channel
-            for c in range(n_channels):
-                delta[c], zero_point[c] = self.init_quantization_scale_channel(x_clone[c])
-            if len(x_clone.shape) == 4:
-                delta = delta.view(-1, 1, 1, 1)
-                zero_point = zero_point.view(-1, 1, 1, 1)
-            else:
-                delta = delta.view(-1, 1)
-                zero_point = zero_point.view(-1, 1)
-        else:
-            delta, zero_point = self.init_quantization_scale_channel(x_clone)
+        scale = (max_val_pos - min_val_neg) / float(quant_max - quant_min)
+        scale = torch.max(scale, self.eps)
+        zero_point = quant_min - torch.round(min_val_neg / scale)
+        zero_point = torch.clamp(zero_point, quant_min, quant_max)
+        return scale, zero_point
 
-        return delta, zero_point
-
-    def quantize(self, x: torch.Tensor, x_max: float, x_min: float):
-        delta = (x_max - x_min) / (2 ** self.n_bits - 1)
-        delta = max(delta, 1e-8)
-        zero_point = round(-x_min / delta)
+    def quantize(self, x: torch.Tensor, x_max, x_min):
+        delta, zero_point = self.calculate_qparams(x_min, x_max)
+        if self.channel_wise:
+            new_shape = [1] * len(x.shape)
+            new_shape[0] = x.shape[0]
+            delta = delta.reshape(new_shape)
+            zero_point = zero_point.reshape(new_shape)
         x_int = torch.round(x / delta)
         x_quant = torch.clamp(x_int + zero_point, 0, self.n_levels - 1)
         x_float_q = (x_quant - zero_point) * delta
         return x_float_q
+
+    def perform_2D_search(self, x):
+        if self.channel_wise:
+            y = torch.flatten(x, 1)
+            x_min, x_max = torch._aminmax(y, 1)
+            # may also have the one side distribution in some channels
+            x_max = torch.max(x_max, torch.zeros_like(x_max))
+            x_min = torch.min(x_min, torch.zeros_like(x_min))
+        else:
+            x_min, x_max = torch._aminmax(x)
+        xrange = x_max - x_min
+        best_score = torch.zeros_like(x_min) + (1e+10)
+        best_min = x_min.clone()
+        best_max = x_max.clone()
+        # enumerate xrange
+        for i in range(1, self.num + 1):
+            tmp_min = torch.zeros_like(x_min)
+            tmp_max = xrange / self.num * i
+            tmp_delta = (tmp_max - tmp_min) / (2 ** self.n_bits - 1)
+            # enumerate zp
+            for zp in range(0, self.n_levels):
+                new_min = tmp_min - zp * tmp_delta
+                new_max = tmp_max - zp * tmp_delta
+                x_q = self.quantize(x, new_max, new_min)
+                score = self.lp_loss(x, x_q, 2.4)
+                best_min = torch.where(score < best_score, new_min, best_min)
+                best_max = torch.where(score < best_score, new_max, best_max)
+                best_score = torch.min(best_score, score)
+        return best_min, best_max
+
+    def perform_1D_search(self, x):
+        if self.channel_wise:
+            y = torch.flatten(x, 1)
+            x_min, x_max = torch._aminmax(y, 1)
+        else:
+            x_min, x_max = torch._aminmax(x)
+        xrange = torch.max(x_min.abs(), x_max)
+        best_score = torch.zeros_like(x_min) + (1e+10)
+        best_min = x_min.clone()
+        best_max = x_max.clone()
+        # enumerate xrange
+        for i in range(1, self.num + 1):
+            thres = xrange / self.num * i
+            new_min = torch.zeros_like(x_min) if self.one_side_dist == 'pos' else -thres
+            new_max = torch.zeros_like(x_max) if self.one_side_dist == 'neg' else thres
+            x_q = self.quantize(x, new_max, new_min)
+            score = self.lp_loss(x, x_q, 2.4)
+            best_min = torch.where(score < best_score, new_min, best_min)
+            best_max = torch.where(score < best_score, new_max, best_max)
+            best_score = torch.min(score, best_score)
+        return best_min, best_max
+
+    def get_x_min_x_max(self, x):
+        if self.scale_method != 'mse':
+            raise NotImplementedError
+        if self.one_side_dist is None:
+            self.one_side_dist = 'pos' if x.min() >= 0.0 else 'neg' if x.max() <= 0.0 else 'no'
+        if self.one_side_dist != 'no' or self.sym:  # one-side distribution or symmetric value for 1-d search
+            best_min, best_max = self.perform_1D_search(x)
+        else:  # 2-d search
+            best_min, best_max = self.perform_2D_search(x)
+        if self.leaf_param:
+            return self.update_quantize_range(best_min, best_max)
+        return best_min, best_max
+
+    def init_quantization_scale_channel(self, x: torch.Tensor):
+        x_min, x_max = self.get_x_min_x_max(x)
+        return self.calculate_qparams(x_min, x_max)
+
+    def init_quantization_scale(self, x_clone: torch.Tensor, channel_wise: bool = False):
+        if channel_wise:
+            # determine the scale and zero point channel-by-channel
+            delta, zero_point = self.init_quantization_scale_channel(x_clone)
+            new_shape = [1] * len(x_clone.shape)
+            new_shape[0] = x_clone.shape[0]
+            delta = delta.reshape(new_shape)
+            zero_point = zero_point.reshape(new_shape)
+        else:
+            delta, zero_point = self.init_quantization_scale_channel(x_clone)
+        return delta, zero_point
 
     def bitwidth_refactor(self, refactored_bit: int):
         assert 2 <= refactored_bit <= 8, 'bitwidth not supported'
@@ -241,6 +285,6 @@ class QuantModule(nn.Module):
 
     @torch.jit.export
     def extra_repr(self):
-        return 'weight_quantizer={}, act_quantizer={}, disable_act_quant={}'.format(
-            self.weight_quantizer, self.act_quantizer, self.disable_act_quant
+        return 'wbit={}, abit={}, disable_act_quant={}'.format(
+            self.weight_quantizer.n_bits, self.act_quantizer.n_bits, self.disable_act_quant
         )
