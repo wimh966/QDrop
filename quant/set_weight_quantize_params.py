@@ -2,8 +2,8 @@ from .quant_layer import QuantModule
 from .data_utils import save_inp_oup_data
 
 
-def get_init(model, block, cali_data, wq, aq, batch_size, input_prob: bool = False):
-    cached_inps, cached_outs = save_inp_oup_data(model, block, cali_data, wq, aq, batch_size, input_prob=input_prob, keep_gpu=True)
+def get_init(model, block, cali_data, wq, aq, batch_size, input_prob: bool = False, keep_gpu: bool=True):
+    cached_inps, cached_outs = save_inp_oup_data(model, block, cali_data, wq, aq, batch_size, input_prob=input_prob, keep_gpu=keep_gpu)
     return cached_inps, cached_outs
 
 

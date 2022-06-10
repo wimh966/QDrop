@@ -12,7 +12,7 @@ def block_reconstruction(model: QuantModel, block: BaseQuantBlock, cali_data: to
                          batch_size: int = 32, iters: int = 20000, weight: float = 0.01, opt_mode: str = 'mse',
                          act_quant: bool = False, b_range: tuple = (20, 2),
                          warmup: float = 0.0, p: float = 2.0, lr: float = 4e-5, wwq: bool = True, waq: bool = True,
-                         order: str = 'together', input_prob: float = 1.0):
+                         order: str = 'together', input_prob: float = 1.0, keep_gpu: bool = True):
     """
     Block reconstruction to optimize the output from each block.
 
@@ -33,7 +33,7 @@ def block_reconstruction(model: QuantModel, block: BaseQuantBlock, cali_data: to
     """
 
     '''get input and set scale'''
-    cached_inps, cached_outs = get_init(model, block, cali_data, wq=wwq, aq=waq, batch_size=batch_size, input_prob=True)
+    cached_inps, cached_outs = get_init(model, block, cali_data, wq=wwq, aq=waq, batch_size=batch_size, input_prob=True, keep_gpu=keep_gpu)
     if act_quant and order == 'together':
         set_act_quantize_params(block, cali_data=cached_inps[0][:min(256, cached_inps[0].size(0))], awq=True, order=order)
 

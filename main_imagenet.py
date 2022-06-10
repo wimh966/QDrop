@@ -162,6 +162,7 @@ if __name__ == '__main__':
     parser.add_argument('--num_samples', default=1024, type=int, help='size of the calibration dataset')
     parser.add_argument('--iters_w', default=20000, type=int, help='number of iteration for adaround')
     parser.add_argument('--weight', default=0.01, type=float, help='weight of rounding cost vs the reconstruction loss.')
+    parser.add_argument('--keep_cpu', action='store_true', help='keep the calibration data on cpu')
 
     parser.add_argument('--wwq', action='store_true', help='weight_quant for input in weight reconstruction')
     parser.add_argument('--waq', action='store_true', help='act_quant for input in weight reconstruction')
@@ -208,6 +209,8 @@ if __name__ == '__main__':
         qnn.set_first_last_layer_to_8bit()
 
     qnn.disable_network_output_quantization()
+    print('check the model!')
+    print(qnn)
     cali_data, cali_target = get_train_samples(train_loader, num_samples=args.num_samples)
     device = next(qnn.parameters()).device
     # print('the quantized model is below!')
@@ -216,7 +219,7 @@ if __name__ == '__main__':
     kwargs = dict(cali_data=cali_data, iters=args.iters_w, weight=args.weight,
                   b_range=(args.b_start, args.b_end), warmup=args.warmup, opt_mode='mse',
                   wwq=args.wwq, waq=args.waq, order=args.order, act_quant=args.act_quant,
-                  lr=args.lr, input_prob=args.input_prob)
+                  lr=args.lr, input_prob=args.input_prob, keep_gpu=not args.keep_cpu)
 
     if args.act_quant and args.order == 'before' and args.awq is False:
         '''Case 2'''
