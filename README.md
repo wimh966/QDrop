@@ -5,10 +5,11 @@ PyTorch implementation of QDrop: Randomly Dropping Quantization for Extremely Lo
 
 QDrop is a simple yet effective approach, which randomly drops the quantization of activations during reconstruction to pursue flatter model on both calibration and test data. QDrop is easy to implement for various neural networks including CNNs and Transformers, and plug-and-play with little additional computational complexity.
 
-Experiments on various tasks include computer vision (image classification, object detection) and natural language processing (text classification and question answering) . 
-
 ## Integrated into MQBench
-Our method has been integrated into quantization benchmark [MQBench](https://github.com/ModelTC/MQBench). And the docs can be found here <http://mqbench.tech/assets/docs/html/>
+Our method has been integrated into quantization benchmark [MQBench](https://github.com/ModelTC/MQBench). And the docs can be found here <https://mqbench.readthedocs.io/en/latest/>. 
+
+**Moreover, obeying the design style of quantization structure in MQBench, we also implement another form of QDrop in branch "qdrop". You can use any branch you like. Details seen in the readme in branch "qdrop"**
+
 
 ## Usage
 
@@ -50,15 +51,16 @@ done
 Then you can get a series of scripts and run it directly to get the following results.
 ## Results
 
-Results on low-bit activation in terms of accuracy on ImageNet. * represents for our implementation according to open-source codes.
+Results on low-bit activation in terms of accuracy on ImageNet.
 
-| Methods |  Bits (W/A)    | ResNet-18     |ResNet-50| MobileNetV2 | RegNet-600MF | RegNet-3.2GF | MNasNet-2.0 |
+| Methods |  Bits (W/A) | Res18    |Res50 | MNV2 | Reg600M | Reg3.2G | MNasx2 |
 | ------- | ---- | ---- | ---- | ---- | ---- | ---- | ---- |
-|   Full Prec.      |   32/32 | 71.06 | 77.00 | 72.49 | 73.71 | 78.36 | 76.68   |
-|QDrop| 4/4 | 69.10 | 75.03 | 67.89 | 70.62 | 76.33 | 72.39 |
-|QDrop| 2/4 | 64.66 | 70.08 | 52.92 | 63.10 | 70.95 | 62.36|
-|QDrop| 3/3 | 65.56 | 71.07 | 54.27 | 64.53 | 71.43 | 63.47|
-|QDrop| 2/2 | 51.14| 54.74| 8.46| 38.90| 52.36| 22.70|
+|   Full Prec. |   32/32 | 71.06 | 77.00 | 72.49 | 73.71 | 78.36 | 76.68   |
+|QDrop| 4/4 | 69.07 | 75.03 | 67.91 | 70.81 | 76.36 | 72.81 |
+|QDrop| 2/4 | 64.49 | 70.09 | 53.62 | 63.36 | 71.69 | 63.22 |
+|QDrop| 3/3 | 65.57 | 71.28 | 55.00 | 64.84 | 71.70 | 64.44 |
+|QDrop| 2/2 | 51.76 | 55.36 | 10.21 | 38.35 | 54.00 | 23.62 |
+
 
 
 ## More experiments
@@ -89,3 +91,14 @@ To compare with QDrop, No Drop can be achieved by turning the probability to 1.0
 ```
 python main_imagenet.py --data_path data_path --arch resnet18 --n_bits_w 2 --channel_wise --n_bits_a 2 --act_quant --order together --wwq --waq --awq --aaq --input_prob 1.0 --prob 1.0
 ```
+
+## Reference
+
+If you find this repo useful for your research, please consider citing the paper:
+
+    @article{wei2022qdrop,
+	title={QDrop: Randomly Dropping Quantization for Extremely Low-bit Post-Training Quantization},
+	author={Wei, Xiuying and Gong, Ruihao and Li, Yuhang and Liu, Xianglong and Yu, Fengwei},
+	journal={arXiv preprint arXiv:2203.05740},
+	year={2022}
+	}
