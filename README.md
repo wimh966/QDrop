@@ -1,10 +1,33 @@
-## Overview
+# QDrop
+## Introduction
+This repository contains the offical implementation for our paper **QDrop: Randomly Dropping Quantization for Extremely Low-bit Post-Training Quantization**
 
-In this branch, we provide another form of code, which obeys the design style of quantization structure in MQBench.
+> In this work, we investigate how the activation quantization affects weight tuning. *QDrop* builds the relationship between activation quantization and flatness of quantized weights, and then proposes to randomly drop the activation quantization to achieve a flatter optimized weights. 
 
+![image-20230711143114190](qdrop_flatness.png)
+
+ - [x] 2023/07/11 Update codes of detection task on branch *qdrop_coco*
+
+## File Organization
+
+This branch *qdrop* contains the code of classificaion task on ImageNet dataset. Another branch *qdrop_coco* contains the code of detection task on MSCOCO dataset. For the code of MSCOCO, please see README in its branch.
+```
+QDrop/qdrop/
+├── quantization/       [Quantization tools]
+│   ├── fake_quant.py   [Implement quantize and dequantize functions]   
+│   ├── observer.py     [Collect the information of distribution and calculate quantization clipping range]     
+│   ├── state.py        [Set quantization states]
+
+├── models/             [Definition of quantized models]
+
+├── solver/ 
+|   ├── main_imagenet.py [Run quantization on imagenet dataset]
+|   ├── imagenet_util.py [Load imagenet dataset]
+|   ├── recon.py         [Reconstruct models]
+```
 ## Usage
 
-Go into the exp/w2a4 directory. You can find config.yaml and run.sh for each arch. Execute the run.sh for quantized model. Other bit settings only need to change the corresponding bit number in yaml file.
+Go into the exp/w2a4 directory. You can find config.yaml and run.sh for each architecture. Execute the run.sh for quantized model. Other bit settings only need to change the corresponding bit number in yaml file.
 
 ## Results
 
@@ -23,8 +46,8 @@ Results on low-bit activation in terms of accuracy on ImageNet.
 If you find this repo useful for your research, please consider citing the paper:
 
     @article{wei2022qdrop,
-	title={QDrop: Randomly Dropping Quantization for Extremely Low-bit Post-Training Quantization},
-	author={Wei, Xiuying and Gong, Ruihao and Li, Yuhang and Liu, Xianglong and Yu, Fengwei},
-	journal={arXiv preprint arXiv:2203.05740},
-	year={2022}
-	}
+    title={QDrop: Randomly Dropping Quantization for Extremely Low-bit Post-Training Quantization},
+    author={Wei, Xiuying and Gong, Ruihao and Li, Yuhang and Liu, Xianglong and Yu, Fengwei},
+    journal={arXiv preprint arXiv:2203.05740},
+    year={2022}
+    }
